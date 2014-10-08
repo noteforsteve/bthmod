@@ -434,7 +434,20 @@ OsxUartPurge(
     IN uhandle_t    hUart
     )
 {
-    return E_FAIL;
+    int Retval;
+    OsxUart_T *pUart = (OsxUart_T *)hUart;
+
+    DBG_MSG(DBG_TRACE, "%s\n", __FUNCTION__);
+
+    Retval = pUart ? S_OK : E_INVALIDARG;
+    CHECK_RETVAL(Retval, ExitOnFailure);                                                            
+                                                                                                    
+    Retval = tcflush(pUart->hPort, TCIOFLUSH);
+    CHECK_RETVAL(Retval, ExitOnFailure);                                                            
+   
+ExitOnFailure:
+ 
+    return Retval;
 }
 
 /*** Private Functions ********************************************************/
