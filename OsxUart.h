@@ -56,5 +56,10 @@ OsxUartGetStatus(
     OUT unsigned int *puState
     );
 
+int 
+OsxUartPurge(
+    IN uhandle_t    h
+    );
+
 #endif
 

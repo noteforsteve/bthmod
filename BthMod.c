@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <ctype.h>
+#include <stdlib.h>
 
 #include "Common.h"
 #include "Uart.h"
@@ -209,7 +210,6 @@ BthModScan(
     int ret = E_FAIL;
     int i;
     char Buf[MAX_LINE];
-    unsigned int BytesRead;
 
     DBG_MSG(DBG_TRACE, "%s\n", __FUNCTION__);
 

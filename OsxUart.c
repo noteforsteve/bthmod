@@ -429,6 +429,13 @@ ExitOnFailure:
     return Retval;
 }
 
+int
+OsxUartPurge(
+    IN uhandle_t    hUart
+    )
+{
+    return E_FAIL;
+}
 
 /*** Private Functions ********************************************************/
 

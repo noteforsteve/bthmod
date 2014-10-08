@@ -17,6 +17,7 @@
 #define OS_TYPE             OS_TYPE_OSX
 #define PATH_SEPARATOR      '/'
 #define PATH_MAX_LENGTH     256
+#define MAX_PATH            PATH_MAX_LENGTH
 #endif
 
 /*** Portable functions ******************************************************/
