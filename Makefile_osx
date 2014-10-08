@@ -1,22 +1,30 @@
 CFLAGS=-Wall -g -DDEBUG -DOSX -DUART_TESTS
 
-all:uuart.app
+all:bthmod.app
 
 OBJS=Main.o\
 	Debug.o\
 	Common.o\
 	Portable.o\
 	OsxUart.o\
-    Uart.o
+    Uart.o\
+	UartLine.o\
+	BthMod.o
 
-uuart.app: $(OBJS)
-	cc $(OBJS) -o uuart.app
+bthmod.app: $(OBJS)
+	cc $(OBJS) -o bthmod.app
 
 Main.o: Main.h Main.c
 	cc $(CFLAGS) -c Main.c
 
 Uart.o: Uart.h Uart.c
 	cc $(CFLAGS) -c Uart.c
+
+UartLine.o: UartLine.h UartLine.c
+	cc $(CFLAGS) -c UartLine.c
+
+BthMod.o: BthMod.h BthMod.c
+	cc $(CFLAGS) -c BthMod.c
 
 OsxUart.o: OsxUart.h OsxUart.c
 	cc $(CFLAGS) -c OsxUart.c
