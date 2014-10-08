@@ -1,0 +1,48 @@
+CC=cl
+CFLAGS=/Zi /Od /c /WX /W4 /DDEBUG /DWINDOWS /DUART_TESTS /D_CRT_SECURE_NO_WARNINGS
+
+LINK=link
+LFLAGS=/NOLOGO /DEBUG 
+
+OBJS=Common.obj\
+	Debug.obj\
+	Winuart.obj\
+	Uart.obj\
+	UartLine.obj\
+	Portable.obj\
+	uInterp.obj\
+	BthMod.obj\
+	Main.obj
+
+all: BthMod.exe
+
+Debug.obj : Debug.h Debug.c
+	$(CC) $(CFLAGS) Debug.c
+
+Common.obj : Common.h Common.c
+	$(CC) $(CFLAGS) Common.c
+
+Winuart.obj : Winuart.h Winuart.c
+	$(CC) $(CFLAGS) Winuart.c
+
+Uart.obj : Uart.h Uart.c
+	$(CC) $(CFLAGS) Uart.c
+
+UartLine.obj : UartLine.h UartLine.c
+	$(CC) $(CFLAGS) UartLine.c
+
+uInterp.obj : uInterp.h uInterp.c
+	$(CC) $(CFLAGS) uInterp.c
+
+Portable.obj : Portable.h Portable.c
+	$(CC) $(CFLAGS) Portable.c
+
+Main.obj : Main.h Main.c
+	$(CC) $(CFLAGS) Main.c
+
+BthMod.exe : $(OBJS)
+    $(LINK) $(LFLAGS) $** /OUT:$@
+
+clean:
+    del *.exe *.obj *.ilk *.manifest *.pdb *.suo
+
