@@ -13,7 +13,8 @@
 #define DEBUG_LEVEL DBG_TRACE|DBG_WARN|DBG_ERROR 
 #include "Debug.h"
 
-#define MAX_LINE 256
+#define MAX_LINE        256
+#define MAX_RESPONSE    256
 
 typedef struct
 {
@@ -28,9 +29,9 @@ typedef struct
 
 const BthModBaudEntry_T gBthModBaudTable[] = 
 {
+    {UART_RATE_115200},
     {UART_RATE_256000},
     {UART_RATE_128000},
-    {UART_RATE_115200},
     {UART_RATE_57600},
     {UART_RATE_56000},
     {UART_RATE_38400},
@@ -48,12 +49,12 @@ BthModScan(
     IN BthMod_T *pMod
     );
 
-static
 int
 BthModSendCommand(
     IN BthMod_T     *pMod,
     IN const char   *pCmd,
-    OUT uint8_t     *pResponse,
+    OUT int         *pCmdResult,
+    OUT char        *pResponse,
     IN uint16_t     Len
     );
 
@@ -66,6 +67,12 @@ BthModConfig(
 static
 int 
 BthModFactoryReset(
+    IN BthMod_T *pMod
+    );
+
+static
+int
+BthModSync(
     IN BthMod_T *pMod
     );
 
@@ -93,6 +100,10 @@ BthModOpen(
 
     ret = BthModScan(pMod);
 	CHECK_RETVAL(ret, ExitOnFailure);
+
+    /* Ensure we are in command mode sync, echo is off */
+    ret = BthModSync(pMod);
+    CHECK_RETVAL(ret, ExitOnFailure);
     
     if (ret == S_FALSE)
     {
@@ -101,8 +112,16 @@ BthModOpen(
 
         ret = BthModScan(pMod);
 	    CHECK_RETVAL(ret, ExitOnFailure);
+    
+        if (ret == S_FALSE)
+        {
+            DBG_MSG(DBG_TRACE, "Still not at standard baud rate\n");
+            ret = E_FAIL;
+    	    CHECK_RETVAL(ret, ExitOnFailure);
+        }
     }
 
+    /* Configure the module the way we want it */
     ret = BthModConfig(pMod);
     CHECK_RETVAL(ret, ExitOnFailure);
 
@@ -113,7 +132,7 @@ ExitOnFailure:
 
     free(pMod);
 
-    return E_NOTIMPL;
+    return ret;
 }
  
 void
@@ -143,9 +162,20 @@ BthModListen(
     OUT BthModBda_T *pBda
     )
 {
+    int ret;
+    char Buf[256];
+    BthMod_T *pMod = (BthMod_T *)hMod;
+
     DBG_MSG(DBG_TRACE, "%s\n", __FUNCTION__);
 
-    return E_NOTIMPL;
+    ret = UartLineRead(pMod->hUart, Buf, sizeof(Buf), uWait);
+    CHECK_RETVAL(ret, ExitOnFailure);
+
+    DBG_MSG(DBG_TRACE, "Message: %s\n", Buf);
+
+ExitOnFailure:
+
+    return ret;
 }
  
 int
@@ -215,7 +245,7 @@ BthModScan(
 
     for (i = 0; i < COUNTOF(gBthModBaudTable); i = i + 1)
     {
-        DBG_MSG(DBG_TRACE, "Opening port %s, rate %d\n", pMod->Name, gBthModBaudTable[i].uRate);
+        DBG_MSG(DBG_TRACE, "Scan: port %s, rate %d\n", pMod->Name, gBthModBaudTable[i].uRate);
 
         ret = UartOpen(pMod->hUart, 
                        pMod->Name, 
@@ -229,40 +259,150 @@ BthModScan(
         ret = UartSetStatus(pMod->hUart, UART_STATUS_SETRTS);
 	    CHECK_RETVAL(ret, ExitOnFailure);
 
+        /* Attempt to exit command mode, we need to be in a known state */
         ret = UartLineWrite2(pMod->hUart, "\n---\n", 100, 50);
 	    CHECK_RETVAL(ret, ExitOnFailure);
 
+        /* Dump the read data, we do not chare what was returned */
         ret = UartPurge(pMod->hUart);
 	    CHECK_RETVAL(ret, ExitOnFailure);
 
-        ret = UartLineWrite(pMod->hUart, "$$$", 0);
+        /* Attempt to enter command mode */
+        ret = UartLineWrite2(pMod->hUart, "$$$", 100, 50);
 	    CHECK_RETVAL(ret, ExitOnFailure);
 
+        /* Read the response, we should see the cmd prompt */
         ret = UartLineRead(pMod->hUart, Buf, sizeof(Buf), 100);
-
-        if (SUCCEEDED(ret))
+        if (FAILED(ret) && (ret != E_TIMEOUT))
         {
-            ret = UartPurge(pMod->hUart);
-	        CHECK_RETVAL(ret, ExitOnFailure);
-
-            if (!strncmp(Buf, "CMD", 3))
-            {
-                if (i == 0)
-                {
-                    DBG_MSG(DBG_TRACE, "Module found standard rate\n");
-                    ret = S_OK;
-                }
-                else
-                {
-                    DBG_MSG(DBG_TRACE, "Module found in odd rate\n");
-                    ret = S_FALSE;
-                }
-                break;
-            }
+            CHECK_RETVAL(ret, ExitOnFailure);
         }
+
+        /* Have we entered command mode */
+        if (SUCCEEDED(ret) && !strncmp(Buf, "CMD", 3))
+        {
+            ret = (i == 0) ? S_OK : S_FALSE;
+            break;
+        }            
 
         UartClose(pMod->hUart);
     }
+
+ExitOnFailure:
+
+    return ret;
+}
+
+int
+BthModSync(
+    IN BthMod_T *pMod
+    )
+{
+    int ret;
+    char Buf[256];
+
+    DBG_MSG(DBG_TRACE, "%s\n", __FUNCTION__);
+
+    ret = UartLineWrite(pMod->hUart, "\n", 100);
+    CHECK_RETVAL(ret, ExitOnFailure);
+
+    PortableSleep(100);
+
+    ret = UartLineWrite(pMod->hUart, "\n", 100);
+    CHECK_RETVAL(ret, ExitOnFailure);
+
+    PortableSleep(100);
+
+    ret = UartPurge(pMod->hUart);
+    CHECK_RETVAL(ret, ExitOnFailure);
+
+    ret = UartLineWrite(pMod->hUart, "\n", 100);
+    CHECK_RETVAL(ret, ExitOnFailure);
+
+    ret = UartLineRead(pMod->hUart, Buf, sizeof(Buf), 100);
+    CHECK_RETVAL(ret, ExitOnFailure);
+
+    ret = (Buf[0] == '?') ? S_OK : E_FAIL;
+    CHECK_RETVAL(ret, ExitOnFailure);
+
+    /* Check the echo status */    
+    ret = UartLineWrite(pMod->hUart, "+\n", 100);
+    CHECK_RETVAL(ret, ExitOnFailure);
+
+    ret = UartLineRead(pMod->hUart, Buf, sizeof(Buf), 100);
+    CHECK_RETVAL(ret, ExitOnFailure);
+
+    /* Check the echo status */    
+    ret = (strncmp(Buf, "ECHO OFF", 8) ||
+           strncmp(Buf, "ECHO ON", 7)) ? S_OK : E_FAIL;
+    CHECK_RETVAL(ret, ExitOnFailure);
+
+    /* If echo is on we must turn it off */    
+    if (!strncmp(Buf, "ECHO ON", 7))
+    {
+        ret = UartLineWrite(pMod->hUart, "+\n", 100);
+        CHECK_RETVAL(ret, ExitOnFailure);
+
+        ret = UartLineRead(pMod->hUart, Buf, sizeof(Buf), 100);
+        CHECK_RETVAL(ret, ExitOnFailure);
+
+        ret = UartLineRead(pMod->hUart, Buf, sizeof(Buf), 100);
+        CHECK_RETVAL(ret, ExitOnFailure);
+
+        ret = !strncmp(Buf, "ECHO OFF", 8) ? S_OK : E_FAIL;
+        CHECK_RETVAL(ret, ExitOnFailure);
+    }
+    
+ExitOnFailure:
+    
+    return ret;
+}
+
+int
+BthModSendCommand(
+    IN BthMod_T     *pMod,
+    IN const char   *pCmd,
+    OUT int         *pCmdResult,
+    OUT char        *pResponse,
+    IN uint16_t     Len
+    )
+{
+    int ret;
+    char Buf[256];
+
+    if (pResponse)
+    {
+        memset(pResponse, 0, Len);
+    }
+    
+    if (pCmdResult)
+    {
+        *pCmdResult = E_FAIL;
+    }
+
+    ret = UartLineWrite(pMod->hUart, pCmd, 100);
+    CHECK_RETVAL(ret, ExitOnFailure);
+
+    PortableSleep(250);
+
+    ret = UartLineRead(pMod->hUart, Buf, sizeof(Buf), 100);
+    CHECK_RETVAL(ret, ExitOnFailure);
+
+    if (!strncmp(Buf, "AOK", 3))
+    {
+        if (pResponse)
+        {
+            strncpy(pResponse, Buf, Len);
+        }
+
+        if (pCmdResult)
+        {
+            *pCmdResult = S_OK;
+        }
+    }
+
+    ret = UartPurge(pMod->hUart);
+    CHECK_RETVAL(ret, ExitOnFailure);
 
 ExitOnFailure:
 
@@ -275,34 +415,43 @@ BthModFactoryReset(
     )
 {
     int ret;
-    uint8_t Response[256];
+    int CmdRet;
 
-    ret = BthModSendCommand(pMod, "SF,1\n", Response, sizeof(Response));
-    DBG_DUMP(DBG_TRACE, 0, Response, sizeof(Response));
+    DBG_MSG(DBG_TRACE, "%s\n", __FUNCTION__);
 
-    ret = BthModSendCommand(pMod, "R,1\n", Response, sizeof(Response));
-    DBG_DUMP(DBG_TRACE, 0, Response, sizeof(Response));
+    ret = BthModSendCommand(pMod, "SF,1\n", &CmdRet, NULL, 0);
+    CHECK_RETVAL(ret, ExitOnFailure);
+
+    ret = BthModSendCommand(pMod, "R,1\n", &CmdRet, NULL, 0);
+    CHECK_RETVAL(ret, ExitOnFailure);
+
+ExitOnFailure:
 
     return ret;
 }    
 
-int
-BthModSendCommand(
-    IN BthMod_T     *pMod,
-    IN const char   *pCmd,
-    OUT uint8_t     *pResponse,
-    IN uint16_t     Len
+int 
+BthModCommandMode(
+    IN BthMod_T *pMod,
+    IN uint16_t  bEnter
     )
 {
     int ret;
+    char Buf[256];
 
-    ret = UartLineWrite(pMod->hUart, pCmd, 0);
+    /* Attempt to enter command mode */
+    ret = UartLineWrite2(pMod->hUart, "$$$", 100, 50);
     CHECK_RETVAL(ret, ExitOnFailure);
 
-    PortableSleep(250);
-    memset(pResponse, 0, Len);
+    /* Read the response, we should see the cmd prompt */
+    ret = UartLineRead(pMod->hUart, Buf, sizeof(Buf), 200);
+    if (FAILED(ret) && (ret != E_TIMEOUT))
+    {
+        CHECK_RETVAL(ret, ExitOnFailure);
+    }
 
-    ret = UartLineRead(pMod->hUart, (char *)pResponse, Len, 100);
+    /* Have we entered command mode */
+    ret = (SUCCEEDED(ret) && !strncmp(Buf, "CMD", 3)) ? S_OK : E_FAIL;
     CHECK_RETVAL(ret, ExitOnFailure);
 
 ExitOnFailure:
@@ -315,5 +464,50 @@ BthModConfig(
     IN BthMod_T     *pMod
     )
 {
-    return E_NOTIMPL;
+    int ret;
+    int CmdRet;
+    char Response[256];
+
+    DBG_MSG(DBG_TRACE, "%s\n", __FUNCTION__);
+    
+    /* Set profile to SPP */
+    ret = BthModSendCommand(pMod, "S~,0\n", &CmdRet, Response, sizeof(Response));
+    CHECK_RETVAL(ret, ExitOnFailure);
+    CHECK_RETVAL(CmdRet, ExitOnFailure);
+
+    /* Set authentication mode to SSP */
+    ret = BthModSendCommand(pMod, "SA,2\n", &CmdRet, Response, sizeof(Response));
+    CHECK_RETVAL(ret, ExitOnFailure);
+    CHECK_RETVAL(CmdRet, ExitOnFailure);
+
+    /* Set pin code to 0000 */
+    // ret = BthModSendCommand(pMod, "SP,0000\n", &CmdRet, Response, sizeof(Response));
+    // CHECK_RETVAL(ret, ExitOnFailure);
+    // CHECK_RETVAL(CmdRet, ExitOnFailure);
+
+    /* Disable command mode timer */
+    ret = BthModSendCommand(pMod, "ST,200\n", &CmdRet, Response, sizeof(Response));
+    CHECK_RETVAL(ret, ExitOnFailure);
+    CHECK_RETVAL(CmdRet, ExitOnFailure);
+
+    ret = BthModSendCommand(pMod, "SO,->\n", &CmdRet, Response, sizeof(Response));
+    CHECK_RETVAL(ret, ExitOnFailure);
+    CHECK_RETVAL(CmdRet, ExitOnFailure);
+
+    ret = BthModSendCommand(pMod, "R,1\n", &CmdRet, Response, sizeof(Response));
+    CHECK_RETVAL(ret, ExitOnFailure);
+
+    PortableSleep(1000);
+
+    ret = UartPurge(pMod->hUart);
+    CHECK_RETVAL(ret, ExitOnFailure);
+
+    ret = BthModCommandMode(pMod, TRUE);
+    CHECK_RETVAL(ret, ExitOnFailure);
+
+    return S_OK;
+
+ExitOnFailure:
+
+    return E_FAIL;
 }

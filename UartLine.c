@@ -36,6 +36,23 @@ UartLineCopy(
 			pLine[i] = '\0';
 			gLineIndex = gLineIndex - i;
 			memmove(&gLineCache[0], &gLineCache[i], gLineIndex);
+
+            /* Strip trailing new lines and line feeds */
+            if (i)
+            {
+                i = i - 1;
+            }
+
+            for ( ; i; i = i + 1)
+            {
+                if (pLine[i] != 0x0A && pLine[i] != 0x0D)
+                {
+                    break;
+                }
+
+                pLine[i] = '\0';    
+            }                
+
 			Retval = S_OK;
 			break;
 		}
